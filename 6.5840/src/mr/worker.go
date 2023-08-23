@@ -114,6 +114,9 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 			}
 			defer file.Close()
 		}
+
+		sort.Sort(ByKey(kva))
+		
 		// All in one Reduce Task has been collected.
 		// Do Reduce
 		outputFileName := fmt.Sprintf("mr-out-%d", ReplyFromCoor.ReduceTaskId)
