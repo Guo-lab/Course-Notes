@@ -49,6 +49,7 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 	fmt.Printf("Oops - ReplyFromCoor.Y %v [OK]\n", ReplyFromCoor.Y)
 
 	if ReplyFromCoor.Map == true {
+
 		fmt.Printf("Oops - Get Map Tasks\n")
 		fmt.Println("Map Task with File <", ReplyFromCoor.File, ">")
 		
@@ -92,10 +93,51 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 			}
 		}
 
+
 	} else if ReplyFromCoor.Reduce == true {
 		fmt.Printf("Oops - Get Reduce Tasks\n")
+
+		kva := []KeyValue{}
+		for i := 1; i <= ReplyFromCoor.MapTaskNum; i++ {
+			filename := fmt.Sprintf("mr-%d-%d.json", i, ReplyFromCoor.ReduceTaskId)
+			file, err := os.Open(filename)
+			if err != nil {
+				panic(err)
+			}
+			dec := json.NewDecoder(file)
+			for {
+				var kv KeyValue
+				if err := dec.Decode(&kv); err != nil {
+					break
+				}
+				kva = append(kva, kv)
+			}
+			defer file.Close()
+		}
+		// All in one Reduce Task has been collected.
+		// Do Reduce
+		outputFileName := fmt.Sprintf("mr-out-%d", ReplyFromCoor.ReduceTaskId)
+		ofile, _ := os.Create(outputFileName)
+		i := 0
+		for i < len(kva) {
+			j := i + 1
+			for j < len(kva) && kva[j].Key == kva[i].Key {
+				j++
+			}
+			values := []string{}
+			for k := i; k < j; k++ {
+				values = append(values, kva[k].Value)
+			}
+			output := reducef(kva[i].Key, values)
+			fmt.Fprintf(ofile, "%v %v\n", kva[i].Key, output)
+			
+			i = j
+		}
+		ofile.Close()
+
 	} else {
 		fmt.Printf("Oops - No Tasks at all!\n")
+		fmt.Printf("Oops - ReplyFromCoor.Y %v [END]\n", ReplyFromCoor.Y)
 	}
 
 	// --------------------------------------------------------
