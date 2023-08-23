@@ -12,24 +12,46 @@ type Coordinator struct {
 	// Your definitions here.
     filesNotMappedYet []string
 	nReduce           int
-    
+    reduceUnfinished  int
+	mapTasksTotal     int
+	ending            bool
 }
 
 // Your code here -- RPC handlers for the worker to call.
 func (c *Coordinator) AllocateTask(args *ArgsRPC, reply *ReplyRPC) error {
 	if args.WaitingMap == true {
-        reply.Y = args.X + 1
-        reply.Map = true
-		reply.Reduce = false
-		reply.N = c.nReduce
+        if len(c.filesNotMappedYet) != 0 {
+			reply.Y = args.X + 1
+			reply.Map = true
+			reply.Reduce = false
+			reply.N = c.nReduce
 
-		//// fmt.Println(c.filesNotMappedYet)
-		lastFile := c.filesNotMappedYet[len(c.filesNotMappedYet) - 1]
-        lastIdx  := len(c.filesNotMappedYet) - 1
-		reply.File = lastFile
-		reply.MapTaskId = lastIdx + 1
-		c.filesNotMappedYet = append(c.filesNotMappedYet[:lastIdx], c.filesNotMappedYet[lastIdx + 1:]...)
-        //// fmt.Println(c.filesNotMappedYet)
+			//// fmt.Println(c.filesNotMappedYet)
+			lastFile := c.filesNotMappedYet[len(c.filesNotMappedYet) - 1]
+			lastIdx  := len(c.filesNotMappedYet) - 1
+			reply.File = lastFile
+			reply.MapTaskId = lastIdx + 1
+			c.filesNotMappedYet = append(c.filesNotMappedYet[:lastIdx], c.filesNotMappedYet[lastIdx + 1:]...)
+			//// fmt.Println(c.filesNotMappedYet)
+		} else {
+            // Map and Reduce Done
+			if c.reduceUnfinished == -1 {
+				c.ending = true
+				reply.Map = false
+				reply.Reduce = false
+				reply.Y = args.X + 10
+                return nil
+			}
+
+			reply.Y = args.X + 2
+			reply.Map = false
+			reply.Reduce = true
+			reply.N = c.nReduce
+			reply.ReduceTaskId = c.reduceUnfinished
+			c.reduceUnfinished = c.reduceUnfinished - 1
+			reply.MapTaskNum   = c.mapTasksTotal
+		}
+	
 	}
 	return nil
 }
@@ -69,7 +91,9 @@ func (c *Coordinator) Done() bool {
 	ret := false
 
 	// Your code here.
-
+    if c.ending == true {
+		ret = true
+	}
 
 	return ret
 }
@@ -88,6 +112,9 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// Your code here.
     c.filesNotMappedYet = files
 	c.nReduce = nReduce
+	c.reduceUnfinished  = nReduce - 1
+    c.mapTasksTotal     = len(files)
+    c.ending  = false
 
 	c.server()
 	return &c
