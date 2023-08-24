@@ -9,6 +9,7 @@ import "os"
 import "io/ioutil"
 import "encoding/json"
 import "sort"
+import "time"
 
 
 
@@ -43,104 +44,153 @@ func ihash(key string) int {
 // main/mrworker.go calls this function.
 //
 func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string) {
+    // Distributed
+	// reference https://www.cnblogs.com/porient/p/17215701.html
 
 	// Your worker implementation here.
-    ReplyFromCoor := AskForTask()
-	fmt.Printf("Oops - ReplyFromCoor.Y %v [OK]\n", ReplyFromCoor.Y)
+	for {
 
-	if ReplyFromCoor.Map == true {
-
-		fmt.Printf("Oops - Get Map Tasks\n")
-		fmt.Println("Map Task with File <", ReplyFromCoor.File, ">")
-		
-		intermediate := []KeyValue{}
-		eachFile, err := os.Open(ReplyFromCoor.File)
-		if err != nil {
-			log.Fatalf("cannot open %v", ReplyFromCoor.File)
+		ReplyFromCoor := AskForTask()
+		if ReplyFromCoor.End == true {
+			// The first one to find there is no more reduce tasks
+            break
 		}
-		content, err  := ioutil.ReadAll(eachFile)
-		if err != nil {
-			log.Fatalf("cannot read %v", ReplyFromCoor.File)
+        
+		if ReplyFromCoor.RequestWait == true {
+			time.Sleep(time.Second * 3)
+			continue
 		}
-		eachFile.Close()
-		
-		kva := mapf(ReplyFromCoor.File, string(content))
-		intermediate = append(intermediate, kva...)
-        sort.Sort(ByKey(intermediate))
-
-		// allocate nReduce intermediate files
-		//
-		// ==== Create the JSON files ====
-		for i := 0; i < ReplyFromCoor.N; i++ {
-			filename := fmt.Sprintf("mr-%d-%d.json", ReplyFromCoor.MapTaskId, i)
-		    file, err := os.Create(filename)	
-		    if err != nil {
-				panic(err)
-			}
-			defer file.Close()
-		}
-		// ========== Allocate ==========
-		for _, kv := range intermediate {
-			filename := fmt.Sprintf("mr-%d-%d.json", ReplyFromCoor.MapTaskId, ihash(kv.Key) % ReplyFromCoor.N)
-			file, openErr := os.OpenFile(filename, os.O_RDWR | os.O_APPEND, 0644)
-			if openErr != nil {
-				panic(openErr)
-			}
-			enc := json.NewEncoder(file)
-			err := enc.Encode(kv)
-			if err != nil {
-				panic(err)
-			}
-		}
-
-
-	} else if ReplyFromCoor.Reduce == true {
-		fmt.Printf("Oops - Get Reduce Tasks\n")
-
-		kva := []KeyValue{}
-		for i := 1; i <= ReplyFromCoor.MapTaskNum; i++ {
-			filename := fmt.Sprintf("mr-%d-%d.json", i, ReplyFromCoor.ReduceTaskId)
-			file, err := os.Open(filename)
-			if err != nil {
-				panic(err)
-			}
-			dec := json.NewDecoder(file)
-			for {
-				var kv KeyValue
-				if err := dec.Decode(&kv); err != nil {
-					break
-				}
-				kva = append(kva, kv)
-			}
-			defer file.Close()
-		}
-
-		sort.Sort(ByKey(kva))
-		
-		// All in one Reduce Task has been collected.
-		// Do Reduce
-		outputFileName := fmt.Sprintf("mr-out-%d", ReplyFromCoor.ReduceTaskId)
-		ofile, _ := os.Create(outputFileName)
-		i := 0
-		for i < len(kva) {
-			j := i + 1
-			for j < len(kva) && kva[j].Key == kva[i].Key {
-				j++
-			}
-			values := []string{}
-			for k := i; k < j; k++ {
-				values = append(values, kva[k].Value)
-			}
-			output := reducef(kva[i].Key, values)
-			fmt.Fprintf(ofile, "%v %v\n", kva[i].Key, output)
+		// fmt.Printf("Oops - ReplyFromCoor.Y %v [OK]\n", ReplyFromCoor.Y)
+	
+		if ReplyFromCoor.Map == true {
+	
+			// fmt.Printf("Oops - Get Map Tasks\n")
+			// fmt.Println("Map Task with File <", ReplyFromCoor.File, ">")
 			
-			i = j
-		}
-		ofile.Close()
+			intermediate := []KeyValue{}
+			eachFile, err := os.Open(ReplyFromCoor.File)
+			if err != nil {
+				log.Fatalf("cannot open %v", ReplyFromCoor.File)
+			}
+			content, err  := ioutil.ReadAll(eachFile)
+			if err != nil {
+				log.Fatalf("cannot read %v", ReplyFromCoor.File)
+			}
+			eachFile.Close()
+			
+			kva := mapf(ReplyFromCoor.File, string(content))
+			intermediate = append(intermediate, kva...)
+			sort.Sort(ByKey(intermediate))
+	
+			// allocate nReduce intermediate files
+			//
+			// ==== Create the JSON files ====
+			for i := 0; i < ReplyFromCoor.N; i++ {
+				filename := fmt.Sprintf("mr-%d-%d.json", ReplyFromCoor.MapTaskId, i)
+				file, err := os.Create(filename)	
+				if err != nil {
+					panic(err)
+				}
+				defer file.Close()
+			}
+			// ========== Allocate ==========
+			for _, kv := range intermediate {
+				filename := fmt.Sprintf("mr-%d-%d.json", ReplyFromCoor.MapTaskId, ihash(kv.Key) % ReplyFromCoor.N)
+				file, openErr := os.OpenFile(filename, os.O_RDWR | os.O_APPEND, 0644)
+				if openErr != nil {
+					panic(openErr)
+				}
+				enc := json.NewEncoder(file)
+				err := enc.Encode(kv)
+				if err != nil {
+					panic(err)
+				}
+			}
 
-	} else {
-		fmt.Printf("Oops - No Tasks at all!\n")
-		fmt.Printf("Oops - ReplyFromCoor.Y %v [END]\n", ReplyFromCoor.Y)
+			if ReplyFromCoor.MapTaskId == 1 {
+				// this one has been completed, others?
+				//// args  := ArgsRPC{}
+				//// reply := ReplyRPC{} 
+				//// ok := request("Coordinator.MapDone", &args, &reply)
+				//// if !ok {
+				//// 	return
+				//// }
+			}
+			args  := ArgsRPC{}
+			reply := ReplyRPC{} 
+			ok := request("Coordinator.MapDone", &args, &reply)
+			if !ok {
+				return
+			}
+	        
+			continue
+
+		} else if ReplyFromCoor.Reduce == true {
+			// fmt.Printf("Oops - Get Reduce Tasks\n")
+	
+			kva := []KeyValue{}
+			for i := 1; i <= ReplyFromCoor.MapTaskNum; i++ {
+				filename := fmt.Sprintf("mr-%d-%d.json", i, ReplyFromCoor.ReduceTaskId)
+				file, err := os.Open(filename)
+				if err != nil {
+					panic(err)
+				}
+				dec := json.NewDecoder(file)
+				for {
+					var kv KeyValue
+					if err := dec.Decode(&kv); err != nil {
+						break
+					}
+					kva = append(kva, kv)
+				}
+				defer file.Close()
+			}
+	
+			sort.Sort(ByKey(kva))
+			
+			// All in one Reduce Task has been collected.
+			// Do Reduce
+			outputFileName := fmt.Sprintf("mr-out-%d", ReplyFromCoor.ReduceTaskId)
+			ofile, _ := os.Create(outputFileName)
+			i := 0
+			for i < len(kva) {
+				j := i + 1
+				for j < len(kva) && kva[j].Key == kva[i].Key {
+					j++
+				}
+				values := []string{}
+				for k := i; k < j; k++ {
+					values = append(values, kva[k].Value)
+				}
+				output := reducef(kva[i].Key, values)
+				fmt.Fprintf(ofile, "%v %v\n", kva[i].Key, output)
+				
+				i = j
+			}
+			ofile.Close()
+
+			if ReplyFromCoor.ReduceTaskId == 0 {
+				// Even 0 is done, others?
+				//// args  := ArgsRPC{}
+				//// reply := ReplyRPC{} 
+				//// ok := request("Coordinator.AllDone", &args, &reply)
+				//// if !ok {
+				//// 	return
+				//// }
+			}
+			args  := ArgsRPC{}
+			reply := ReplyRPC{} 
+			ok := request("Coordinator.AllDone", &args, &reply)
+			if !ok {
+				return
+			}
+
+		} else {
+			// fmt.Printf("Oops - No Tasks at all!\n")
+			// fmt.Printf("Oops - ReplyFromCoor.Y %v [END]\n", ReplyFromCoor.Y)
+			
+		}
+
 	}
 
 	// --------------------------------------------------------
@@ -148,15 +198,6 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 	// uncomment to send the Example RPC to the coordinator.
 	////CallExample()
 }
-
-
-
-
-
-
-
-
-
 
 
 
@@ -169,14 +210,15 @@ func AskForTask() ReplyRPC {
 	args.WaitingMap = true
 	reply := ReplyRPC{} 
 	
+	// For multi tasks
 	ok := request("Coordinator.AllocateTask", &args, &reply)
 	if ok {
-        return reply
+		return reply
 	} else {
-		fmt.Printf("call failed!\n")
 		return ReplyRPC{}
 	}
 }
+
 func request(rpcname string, args interface{}, reply interface{}) bool {
 	sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("unix", sockname)
@@ -192,6 +234,35 @@ func request(rpcname string, args interface{}, reply interface{}) bool {
 	fmt.Println(err)
 	return false
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -36,6 +36,8 @@ type ReplyRPC struct {
 	MapTaskId    int
 	ReduceTaskId int
 	MapTaskNum   int
+	End          bool
+	RequestWait  bool
 }
 
 // Cook up a unique-ish UNIX-domain socket name in /var/tmp, for the coordinator.
